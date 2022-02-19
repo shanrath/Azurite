@@ -1,0 +1,32 @@
+name: Docker Image CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v2
+      
+      - name: Login to DockerHub
+        uses: docker/login-action@v1 
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push Docker images
+        # You may pin to the exact commit or the version.
+        # uses: docker/build-push-action@7f9d37fa544684fb73bfe4835ed7214c255ce02b
+        uses: docker/build-push-action@v1.1.2
+        with:
+          # Push is a shorthand for --output=type=registry
+          push: true # optional, default is false
+          # List of secrets to expose to the build (e.g., key=string, GIT_AUTH_TOKEN=mytoken)
+          tags: shanraeth/azurite:latest # optional
+          # Sets the target stage to build
+          #target: # optional
