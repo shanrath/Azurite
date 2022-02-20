@@ -15,7 +15,7 @@ COPY tests ./tests
 RUN npm config set unsafe-perm=true && \
   npm ci
 RUN npm run build && \
-  npm install -g --loglevel verbose
+  npm install -g --loglevel info
 
 
 #
@@ -36,7 +36,7 @@ COPY package*.json LICENSE NOTICE.txt ./
 COPY --from=builder c:/azurite/dist/ dist/
 
 RUN npm config set unsafe-perm=true && \
-  npm install -g --loglevel verbose
+  npm install -g --loglevel info
 
 # Blob Storage Port
 EXPOSE 10000
