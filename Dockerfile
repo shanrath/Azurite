@@ -21,7 +21,7 @@ RUN npm run build && \
 #
 # Production image
 #
-FROM stefanscherer/node-windows:12.18.3-pure
+FROM stefanscherer/node-windows:12.18.3
 
 ENV NODE_ENV=production
 
