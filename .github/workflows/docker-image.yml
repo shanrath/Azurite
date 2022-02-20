@@ -38,17 +38,24 @@ jobs:
           username: ${{ env.DOCKER_USER }}
           password: ${{ secrets.DOCKER_PAT }}          
 
-      - name: Build and push Docker images
-        # You may pin to the exact commit or the version.
-        # uses: docker/build-push-action@7f9d37fa544684fb73bfe4835ed7214c255ce02b
-        uses: docker/build-push-action@v1.1.2
-        with:
-          # Push is a shorthand for --output=type=registry
-          push: true # optional, default is false
-          # List of secrets to expose to the build (e.g., key=string, GIT_AUTH_TOKEN=mytoken)
-          tags: ${{ env.IMAGE_NAME }}:latest # optional
-          # Sets the target stage to build
-          #target: # optional
+      - name: build and push to docker registry
+        run: | 
+          docker login -u ${{ env.DOCKER_USER }} -p ${{ secrets.DOCKER_PAT }}; 
+          docker build . --tag ${{ env.IMAGE_NAME }}:latest;
+          docker push ${{ env.IMAGE_NAME }} -a;
+
+
+#       - name: Build and push Docker images # linux only, sadly
+#         # You may pin to the exact commit or the version.
+#         # uses: docker/build-push-action@7f9d37fa544684fb73bfe4835ed7214c255ce02b
+#         uses: docker/build-push-action@v1.1.2
+#         with:
+#           # Push is a shorthand for --output=type=registry
+#           push: true # optional, default is false
+#           # List of secrets to expose to the build (e.g., key=string, GIT_AUTH_TOKEN=mytoken)
+#           tags: ${{ env.IMAGE_NAME }}:latest # optional
+#           # Sets the target stage to build
+#           #target: # optional
 
 #       # Sign the resulting Docker image digest except on PRs.
 #       # This will only write to the public Rekor transparency log when the Docker
