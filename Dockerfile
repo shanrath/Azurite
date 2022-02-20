@@ -3,7 +3,7 @@
 #
 FROM stefanscherer/node-windows:12.18.3 AS builder
 
-RUN mkdir c:/azurite
+RUN ["cmd", "mkdir", "c:\\azurite"]
 WORKDIR c:/azurite
 
 # Install dependencies first
@@ -25,7 +25,7 @@ FROM node:lts-alpine3.10
 
 ENV NODE_ENV=production
 
-RUN mkdir c:/azurite
+RUN ["cmd", "mkdir", "c:\\azurite"]
 WORKDIR c:/azurite
 
 # Default Workspace Volume
