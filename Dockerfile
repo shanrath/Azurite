@@ -21,7 +21,7 @@ RUN npm run build && \
 #
 # Production image
 #
-FROM node:lts-alpine3.10
+FROM stefanscherer/node-windows:12.18.3-pure
 
 ENV NODE_ENV=production
 
