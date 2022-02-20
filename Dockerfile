@@ -29,7 +29,7 @@ RUN ["cmd", "mkdir", "c:\\azurite"]
 WORKDIR c:/azurite
 
 # Default Workspace Volume
-VOLUME [ "/data" ]
+VOLUME [ "c:/data" ]
 
 COPY package*.json LICENSE NOTICE.txt ./
 
