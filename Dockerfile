@@ -1,9 +1,10 @@
 #
 # Builder
 #
-FROM node:lts-alpine3.10 AS builder
+FROM stefanscherer/node-windows:12.18.3 AS builder
 
-WORKDIR /opt/azurite
+RUN ["powershell", "New-Item", "c:/azurite"]
+WORKDIR c:/azurite
 
 # Install dependencies first
 COPY *.json LICENSE NOTICE.txt ./
@@ -24,14 +25,15 @@ FROM node:lts-alpine3.10
 
 ENV NODE_ENV=production
 
-WORKDIR /opt/azurite
+RUN ["powershell", "New-Item", "c:/azurite"]
+WORKDIR c:/azurite
 
 # Default Workspace Volume
 VOLUME [ "/data" ]
 
 COPY package*.json LICENSE NOTICE.txt ./
 
-COPY --from=builder /opt/azurite/dist/ dist/
+COPY --from=builder c:/azurite/dist/ dist/
 
 RUN npm config set unsafe-perm=true && \
   npm install -g --loglevel verbose
