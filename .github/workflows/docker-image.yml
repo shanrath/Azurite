@@ -38,7 +38,7 @@ jobs:
           username: ${{ env.DOCKER_USER }}
           password: ${{ secrets.DOCKER_PAT }}
 
-      - name: build and push to docker registry https://github.com/shanrath/Azurite/runs/5264729616?check_suite_focus=true
+      - name: build and push to docker registry
         run: | 
           docker build . --tag ${{ env.IMAGE_NAME }}:latest;
           docker push ${{ env.IMAGE_NAME }} -a;
