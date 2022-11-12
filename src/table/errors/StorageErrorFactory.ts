@@ -27,6 +27,20 @@ export default class StorageErrorFactory {
     );
   }
 
+  public static getInvalidAPIVersion(
+    context: Context,
+    apiVersion?: string,
+  ): StorageError {
+    return new StorageError(
+      400,
+      "InvalidHeaderValue",
+      `The API version ${apiVersion} is not supported by Azurite. Please upgrade Azurite to latest version and retry. If you are using Azurite in Visual Studio, please check you have installed latest Visual Studio patch. Azurite command line parameter \"--skipApiVersionCheck\" or Visual Studio Code configuration \"Skip Api Version Check\" can skip this error. `,
+      context.contextID || defaultID,
+      undefined,
+      context
+    );
+  }
+
   public static getInvalidInput(
     context: Context,
     additionalMessages?: { [key: string]: string }
@@ -377,6 +391,28 @@ export default class StorageErrorFactory {
       501,
       "NotImplemented",
       "The requested operation is not implemented on the specified resource.",
+      context.contextID || defaultID,
+      undefined,
+      context
+    );
+  }
+
+  public static getPropertyValueTooLargeError(context: Context): StorageError {
+    return new StorageError(
+      400,
+      "PropertyValueTooLarge",
+      "The property value exceeds the maximum allowed size (64KB). If the property value is a string, it is UTF-16 encoded and the maximum number of characters should be 32K or less.",
+      context.contextID || defaultID,
+      undefined,
+      context
+    );
+  }
+
+  public static getRequestBodyTooLarge(context: Context): StorageError {
+    return new StorageError(
+      413,
+      "RequestBodyTooLarge",
+      `The request body is too large and exceeds the maximum permissible limit.`,
       context.contextID || defaultID,
       undefined,
       context

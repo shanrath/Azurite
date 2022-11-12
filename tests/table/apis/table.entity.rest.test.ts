@@ -5,25 +5,31 @@
 // special care is needed to replace etags and folders when used
 
 import * as assert from "assert";
+import { AxiosResponse } from "axios";
 import { configLogger } from "../../../src/common/Logger";
 import TableConfiguration from "../../../src/table/TableConfiguration";
 import TableServer from "../../../src/table/TableServer";
 import { getUniqueName } from "../../testutils";
+import { createUniquePartitionKey } from "../utils/table.entity.test.utils";
 import {
   getToAzurite,
-  postToAzurite
+  mergeToAzurite,
+  // mergeToAzurite,
+  patchToAzurite,
+  postToAzurite,
+  putToAzurite
 } from "../utils/table.entity.tests.rest.submitter";
 
 // Set true to enable debug log
 configLogger(false);
 
-describe("table Entity APIs test", () => {
+describe("table Entity APIs REST tests", () => {
   // TODO: Create a server factory as tests utils
   const host = "127.0.0.1";
   const port = 11002;
   const metadataDbPath = "__tableTestsStorage__";
   const enableDebugLog: boolean = true;
-  const debugLogPath: string = "g:/debug.log";
+  const debugLogPath: string = "";
   const config = new TableConfiguration(
     host,
     port,
@@ -349,4 +355,606 @@ describe("table Entity APIs test", () => {
       "We did not get the expected NotImplemented error."
     );
   });
+
+  it("Upsert with wrong etag should fail in batch request, @loki", async () => {
+    const body = JSON.stringify({
+      TableName: reproFlowsTableName
+    });
+    const createTableHeaders = {
+      "Content-Type": "application/json",
+      Accept: "application/json;odata=nometadata"
+    };
+    const createTableResult = await postToAzurite(
+      "Tables",
+      body,
+      createTableHeaders
+    );
+    assert.strictEqual(createTableResult.status, 201);
+
+    const createEntityHeaders = {
+      "Content-Type": "application/json",
+      Accept: "application/json;odata=fullmetadata"
+    };
+    const partitionKey = createUniquePartitionKey();
+    const rowKey = "RK";
+    // first create entity to overwrite
+    const createEntityResult = await postToAzurite(
+      reproFlowsTableName,
+      `{"PartitionKey":"${partitionKey}","RowKey":"${rowKey}","Value":"01"}`,
+      createEntityHeaders
+    );
+
+    assert.strictEqual(
+      createEntityResult.status,
+      201,
+      "We failed to create the entity to be later upserted using Rest"
+    );
+
+    const headers = createEntityResult.headers;
+    assert.notStrictEqual(
+      headers.etag,
+      undefined,
+      "We did not get an Etag that we need for our test!"
+    );
+
+    const upsertBatchRequest = `--batch_adc25243-680a-46d2-bf48-0c112b5e8079\r\nContent-Type: multipart/mixed; boundary=changeset_b616f3c3-99ac-4bf7-8053-94b423345207\r\n\r\n--changeset_b616f3c3-99ac-4bf7-8053-94b423345207\r\nContent-Type: application/http\r\nContent-Transfer-Encoding: binary\r\n\r\nPUT http://127.0.0.1:10002/devstoreaccount1/${reproFlowsTableName}(PartitionKey=\'${partitionKey}\',RowKey=\'${rowKey}\')?$format=application%2Fjson%3Bodata%3Dminimalmetadata HTTP/1.1\r\nHost: 127.0.0.1\r\nx-ms-version: 2019-02-02\r\nDataServiceVersion: 3.0\r\nIf-Match: W/"datetime\'2022-02-23T07%3A21%3A33.9580000Z\'"\r\nAccept: application/json\r\nContent-Type: application/json\r\n\r\n{"PartitionKey":"${partitionKey}","RowKey":"${rowKey}"}\r\n--changeset_b616f3c3-99ac-4bf7-8053-94b423345207--\r\n\r\n--batch_adc25243-680a-46d2-bf48-0c112b5e8079--\r\n`;
+    const upsertBatchHeaders = {
+      version: "2019-02-02",
+      options: {
+        requestId: "38c433f9-5af4-4890-8082-d1380605ed8e",
+        dataServiceVersion: "3.0"
+      },
+      multipartContentType:
+        "multipart/mixed; boundary=batch_adc25243-680a-46d2-bf48-0c112b5e8079"
+    };
+
+    try {
+      const upsertBatchResult = await postToAzurite(
+        "$batch",
+        upsertBatchRequest,
+        upsertBatchHeaders
+      );
+
+      assert.strictEqual(upsertBatchResult.status, 202, "Batch Upsert Failed.");
+      assert.strictEqual(
+        upsertBatchResult.data.match(/\s412\sPrecondition\sFailed/).length,
+        1,
+        "Did not get the expected error in batch response."
+      );
+    } catch (upsertError: any) {
+      assert.strictEqual(
+        upsertError.response.status,
+        202,
+        "Batch request failed."
+      );
+    }
+  });
+
+  // validation based on:
+  // https://docs.microsoft.com/en-us/rest/api/storageservices/Understanding-the-Table-Service-Data-Model#characters-disallowed-in-key-fields
+  it("Should not accept invalid characters in partitionkey or rowKey, @loki", async () => {
+    reproFlowsTableName = getUniqueName("keyvalidation");
+    const body = JSON.stringify({
+      TableName: reproFlowsTableName
+    });
+    const createTableHeaders = {
+      "Content-Type": "application/json",
+      Accept: "application/json;odata=nometadata"
+    };
+    const createTableResult = await postToAzurite(
+      "Tables",
+      body,
+      createTableHeaders
+    );
+    assert.strictEqual(createTableResult.status, 201);
+
+    const invalidKeyRequests: string[] = [
+      '{"PartitionKey":"doNotAllow/ForwardSlash","RowKey":"1","value":"val1"}',
+      '{"PartitionKey":"1","RowKey":"doNotAllow/ForwardSlash","value":"val1"}',
+      '{"PartitionKey":"doNotAllow#hash","RowKey":"1","value":"val1"}',
+      '{"PartitionKey":"1","RowKey":"doNotAllow#hash","value":"val1"}',
+      '{"PartitionKey":"doNotAllow?questionmark","RowKey":"1","value":"val1"}',
+      '{"PartitionKey":"1","RowKey":"doNotAllow?questionmark","value":"val1"}',
+      '{"PartitionKey":"doNotAllow\\backslash","RowKey":"1","value":"val1"}'
+    ];
+    // need to test u0000 to u001f and u007f to u009f
+    for (let i = 0x0; i <= 0x1f; i++) {
+      invalidKeyRequests.push(
+        `{"PartitionKey":"doNotAllow-\\u${i
+          .toString(16)
+          .padStart(4, "0")
+          .toUpperCase()}unicodecontrol","RowKey":"1","value":"val1"}`
+      );
+      invalidKeyRequests.push(
+        `{"PartitionKey":"1","RowKey":"doNotAllow-\\u${i
+          .toString(16)
+          .padStart(4, "0")
+          .toUpperCase()}unicodecontrol","value":"val1"}`
+      );
+    }
+    for (let i = 0x007f; i <= 0x9f; i++) {
+      invalidKeyRequests.push(
+        `{"PartitionKey":"doNotAllow-\\u${i
+          .toString(16)
+          .padStart(4, "0")
+          .toUpperCase()}unicodecontrol","RowKey":"1","value":"val1"}`
+      );
+      invalidKeyRequests.push(
+        `{"PartitionKey":"1","RowKey":"doNotAllow-\\u${i
+          .toString(16)
+          .padStart(4, "0")
+          .toUpperCase()}unicodecontrol","value":"val1"}`
+      );
+    }
+
+    for (const invalidKeyRequest of invalidKeyRequests) {
+      try {
+        const queryRequestResult = await postToAzurite(
+          reproFlowsTableName,
+          invalidKeyRequest,
+          {
+            "x-ms-version": "2019-02-02",
+            "x-ms-client-request-id": "req1",
+            "Content-Type": "application/json",
+            Accept: "application/json;odata=nometadata"
+          }
+        );
+
+        // we expect this to fail, as we are using an invalid key,
+        // and this should jump to the catch block
+        assert.strictEqual(queryRequestResult.status, 400);
+      } catch (err: any) {
+        if (err.response !== undefined) {
+          assert.strictEqual(
+            err.response.status,
+            400,
+            `We did not get the expected status code, we got: ${err} for request ${invalidKeyRequest}`
+          );
+        } else {
+          assert.fail(
+            `Failed to get an error on this request: ${invalidKeyRequest}`
+          );
+        }
+      }
+    }
+  });
+
+  it("Should fail to update using patch verb if entity does not exist, @loki", async () => {
+    const patchTable = getUniqueName("patch");
+    const body = JSON.stringify({
+      TableName: patchTable
+    });
+    const createTableHeaders = {
+      "Content-Type": "application/json",
+      Accept: "application/json;odata=nometadata"
+    };
+    const createTableResult = await postToAzurite(
+      "Tables",
+      body,
+      createTableHeaders
+    );
+    assert.strictEqual(createTableResult.status, 201);
+
+    try {
+      const patchRequestResult = await patchToAzurite(
+        `${patchTable}(PartitionKey='9b0afb2e-3be7-4b95-9ce1-45e9a410cc19',RowKey='a')`,
+        '{"PartitionKey":"9b0afb2e-3be7-4b95-9ce1-45e9a410cc19","RowKey":"a"}',
+        {
+          "If-Match": "*",
+          "Content-Type": "application/json",
+          version: "",
+          "x-ms-client-request-id": "1",
+          DataServiceVersion: "3"
+        }
+      );
+      assert.strictEqual(patchRequestResult.status, 404);
+      // we expect this to fail, as our batch request specifies the etag
+      // https://docs.microsoft.com/en-us/rest/api/storageservices/merge-entity
+    } catch (err: any) {
+      assert.notStrictEqual(
+        err.response,
+        undefined,
+        "Axios error response state invalid"
+      );
+      assert.strictEqual(
+        err.response.status,
+        404,
+        "We did not get the expected failure."
+      );
+    }
+  });
+
+  /**
+   * Check that ifmatch * update works...
+   * if etag == *, then tableClient.updateEntity is calling "Merge" via PATCH with merge option.
+   * Same if etag is omitted. Patch usage is not documented.
+   * if Replace option, calling "Update" in the table handler, which is caling insertOrUpdate in metadata
+   *
+   * Test If-Match cases
+   * https://docs.microsoft.com/en-us/rest/api/storageservices/update-entity2
+   * Update Entity: If-Match Required, via PUT
+   * https://docs.microsoft.com/en-us/rest/api/storageservices/insert-or-replace-entity
+   * Insert or Replace: no If-Match, via PUT
+   * https://docs.microsoft.com/en-us/rest/api/storageservices/merge-entity
+   * Merge-Entity: If-Match Required, via MERGE
+   * https://docs.microsoft.com/en-us/rest/api/storageservices/insert-or-merge-entity
+   * Insert or Merge: no  If-Match, via MERGE
+   */
+  it("Should check different merge, update and replace scenarios on existing entity using if-match", async () => {
+    const mergeTable = getUniqueName("ifmatch");
+    const body = JSON.stringify({
+      TableName: mergeTable
+    });
+    const createTableHeaders = {
+      "Content-Type": "application/json",
+      Accept: "application/json;odata=nometadata"
+    };
+    const createTableResult = await postToAzurite(
+      "Tables",
+      body,
+      createTableHeaders
+    );
+    assert.strictEqual(createTableResult.status, 201);
+
+    let oldEtag = "";
+    let newEtag = "";
+
+    const testHeaders = {
+      "Content-Type": "application/json",
+      version: "",
+      "x-ms-client-request-id": "1",
+      DataServiceVersion: "3"
+    };
+    // First create entity for updating PUT without etag
+    try {
+      const firstPutRequestResult = await putToAzurite(
+        `${mergeTable}(PartitionKey='9b0afb2e-3be7-4b95-9ce1-45e9a410cc19',RowKey='a')`,
+        '{"PartitionKey":"9b0afb2e-3be7-4b95-9ce1-45e9a410cc19","RowKey":"a", "stringValue":"blank"}',
+        testHeaders
+      );
+      assert.strictEqual(firstPutRequestResult.status, 204);
+      oldEtag = firstPutRequestResult.headers.etag;
+    } catch (err: any) {
+      assert.notStrictEqual(
+        err.response,
+        undefined,
+        "Axios error response state invalid"
+      );
+      assert.strictEqual(
+        err.response.status,
+        404,
+        "We did not get the expected failure."
+      );
+    }
+
+    const testCases = [
+      {
+        name: "case 1: Update Entity : PUT with * If-Match.",
+        body: "case1",
+        useIfMatch: true,
+        ifMatch: "*",
+        restFunction: putToAzurite,
+        expectedStatus: 204,
+        expectSuccess: true,
+        errorMessage: "We should not fail PUT with with * If-Match"
+      },
+      {
+        name: "case 2 : Update Entity : PUT with old etag in If-Match.",
+        body: "case2",
+        useIfMatch: true,
+        ifMatch: oldEtag,
+        restFunction: putToAzurite,
+        expectedStatus: 412,
+        expectSuccess: false,
+        errorMessage: "We should not succeed Update PUT using the oldEtag."
+      },
+      {
+        name: "case 3 : Update Entity : PUT with most recent etag in If-Match.",
+        body: "case3",
+        useIfMatch: true,
+        ifMatch: "new",
+        restFunction: putToAzurite,
+        expectedStatus: 204,
+        expectSuccess: true,
+        errorMessage: `We should not fail with the new etag.`
+      },
+      {
+        name: "case 4 : Insert or Replace Entity: PUT without If-Match.",
+        body: "case4",
+        useIfMatch: false,
+        ifMatch: "",
+        restFunction: putToAzurite,
+        expectedStatus: 204,
+        expectSuccess: true,
+        errorMessage: "We did expected PUT without if-match to succeed."
+      },
+      {
+        name: "case 5 : Update Entity : PATCH with * If-Match",
+        body: "case5",
+        useIfMatch: true,
+        ifMatch: "*",
+        restFunction: patchToAzurite,
+        expectedStatus: 204,
+        expectSuccess: true,
+        errorMessage: "We did expected PATCH with * if-match to fail."
+      },
+      {
+        name: "case 6 : Update Entity : PATCH with old etag in If-Match",
+        body: "case6",
+        useIfMatch: true,
+        ifMatch: oldEtag,
+        restFunction: patchToAzurite,
+        expectedStatus: 412,
+        expectSuccess: false,
+        errorMessage:
+          "We did not get the expected failure patching with old etag."
+      },
+      {
+        name: "case 7 : Update Entity : PATCH with new etag in If-Match",
+        body: "case7",
+        useIfMatch: true,
+        ifMatch: "new",
+        restFunction: patchToAzurite,
+        expectedStatus: 204,
+        expectSuccess: true,
+        errorMessage:
+          "We did not get the expected success patching with most recent etag."
+      },
+      {
+        name: "case 8 : Insert or Replace Entity : PATCH with no If-Match",
+        body: "case8",
+        useIfMatch: false,
+        ifMatch: "",
+        restFunction: patchToAzurite,
+        expectedStatus: 204,
+        expectSuccess: true,
+        errorMessage:
+          "We did not get the expected success patching without if-match."
+      },
+      {
+        name: "case 9 : Merge Entity : MERGE with If-Match as *",
+        body: "case9",
+        useIfMatch: true,
+        ifMatch: "*",
+        restFunction: mergeToAzurite,
+        expectedStatus: 204,
+        expectSuccess: true,
+        errorMessage:
+          "We did not get the expected success merging with * if-match."
+      },
+      {
+        name: "case 10 : Merge Entity : MERGE with If-Match as old etag",
+        body: "case10",
+        useIfMatch: true,
+        ifMatch: oldEtag,
+        restFunction: mergeToAzurite,
+        expectedStatus: 412,
+        expectSuccess: false,
+        errorMessage:
+          "We did not get the expected failure merging with old if-match."
+      },
+      {
+        name: "case 11 : Merge Entity : MERGE with If-Match as most recent etag",
+        body: "case11",
+        useIfMatch: true,
+        ifMatch: "new",
+        restFunction: mergeToAzurite,
+        expectedStatus: 204,
+        expectSuccess: true,
+        errorMessage:
+          "We did not get the expected success merging with most recent etag in if-match."
+      },
+      {
+        name: "case 12 : Insert or Merge Entity : MERGE with no If-Match",
+        body: "case12",
+        useIfMatch: false,
+        ifMatch: "",
+        restFunction: mergeToAzurite,
+        expectedStatus: 204,
+        expectSuccess: true,
+        errorMessage:
+          "We did not get the expected success merging with no if-match."
+      }
+    ];
+
+    for (const testCase of testCases) {
+      try {
+        const headers = createHeadersForIfMatchTest(
+          testCase,
+          getHeadersForIfMatchTest(),
+          newEtag
+        );
+        const testCaseRequestResult = await testCase.restFunction(
+          `${mergeTable}(PartitionKey='9b0afb2e-3be7-4b95-9ce1-45e9a410cc19',RowKey='a')`,
+          `{"PartitionKey":"9b0afb2e-3be7-4b95-9ce1-45e9a410cc19","RowKey":"a","stringValue":"${testCase.body}"}`,
+          headers
+        );
+        assert.strictEqual(
+          testCaseRequestResult.status,
+          testCase.expectedStatus,
+          testCase.errorMessage
+        );
+        if (testCase.expectSuccess) {
+          newEtag = testCaseRequestResult.headers.etag;
+        }
+      } catch (err: any) {
+        assert.notStrictEqual(
+          err.response,
+          undefined,
+          `Axios error ${err} response state invalid for ${testCase.name}`
+        );
+        assert.strictEqual(
+          err.response.status,
+          testCase.expectedStatus,
+          testCase.errorMessage
+        );
+        assert.strictEqual(
+          false,
+          testCase.expectSuccess,
+          testCase.errorMessage
+        );
+      }
+    }
+  });
+
+  // issue 1579
+  it("Should return etag when querying an entity, @loki", async () => {
+    // create test table
+    const body = JSON.stringify({
+      TableName: reproFlowsTableName
+    });
+    const createTableHeaders = {
+      "Content-Type": "application/json",
+      Accept: "application/json;odata=nometadata"
+    };
+
+    // post table to Azurite
+    const createTableResult = await postToAzurite(
+      "Tables",
+      body,
+      createTableHeaders
+    );
+
+    // check if successfully created
+    assert.strictEqual(createTableResult.status, 201);
+
+    const createEntityHeaders = {
+      "Content-Type": "application/json",
+      Accept: "application/json;odata=nometadata"
+    };
+
+    const partitionKey = createUniquePartitionKey();
+    const rowKey = "RK";
+
+    // post to Azurite
+    const createEntityResult = await postToAzurite(
+      reproFlowsTableName,
+      `{"PartitionKey":"${partitionKey}","RowKey":"${rowKey}","Value":"01"}`,
+      createEntityHeaders
+    );
+    // check if successfully added
+    assert.strictEqual(createEntityResult.status, 201);
+
+    // get from Azurite; set odata=nometadata
+    const request2Result = await getToAzurite(
+      `${reproFlowsTableName}(PartitionKey='${partitionKey}',RowKey='${rowKey}')`,
+      {
+        "user-agent": "ResourceStack/6.0.0.1260",
+        "x-ms-version": "2018-03-28",
+        "x-ms-client-request-id": "7bbeb6b2-a1c7-4fed-8a3c-80f6b3e7db8c",
+        accept: "application/json;odata=nometadata"
+      }
+    );
+    // check if successfully returned
+    assert.strictEqual(request2Result.status, 200);
+    // check headers
+    const result2Data: any = request2Result.headers;
+    // look for etag in headers; using a variable instead of a string literal to avoid TSLint "no-string-literal" warning
+    const key = "etag";
+    const flowEtag: string = result2Data[key];
+    // check if etag exists
+    assert.ok(flowEtag);
+  });
+
+  it("Etag and timestamp precision and time value must match, @loki", async () => {
+    // first create the table for these tests
+    const body = JSON.stringify({
+      TableName: reproFlowsTableName
+    });
+    const createTableHeaders = {
+      "Content-Type": "application/json",
+      Accept: "application/json;odata=nometadata"
+    };
+    const createTableResult = await postToAzurite(
+      "Tables",
+      body,
+      createTableHeaders
+    );
+    assert.strictEqual(createTableResult.status, 201);
+
+    const createEntityHeaders = {
+      "Content-Type": "application/json",
+      Accept: "application/json;odata=fullmetadata"
+    };
+    const partitionKey = createUniquePartitionKey();
+    const rowKey = "RK";
+    // first create entity to overwrite
+    const createEntityResult = await postToAzurite(
+      reproFlowsTableName,
+      `{"PartitionKey":"${partitionKey}","RowKey":"${rowKey}","Value":"01"}`,
+      createEntityHeaders
+    );
+
+    assert.strictEqual(
+      createEntityResult.status,
+      201,
+      "We failed to create the entity to be later upserted using Rest"
+    );
+
+    const headers = createEntityResult.headers;
+    assert.notStrictEqual(
+      headers.etag,
+      undefined,
+      "We did not get an Etag that we need for our test!"
+    );
+    assert.strictEqual(
+      headers.etag
+        .replace("W/\"datetime'", "")
+        .replace("'\"", "")
+        .replace("%3A", ":")
+        .replace("%3A", ":"),
+      createEntityResult.data.Timestamp,
+      "Etag and Timestamp value must match"
+    );
+  });
 });
+
+/**
+ * Creates the headers for our test cases.
+ *
+ * @param {IfMatchTestCase} testCase
+ * @param {TestHeaders} headers
+ * @param {string} newEtag
+ * @param {boolean} useNewEtag
+ * @return {*}  {*}
+ */
+function createHeadersForIfMatchTest(
+  testCase: IfMatchTestCase,
+  headers: TestHeaders,
+  newEtag: string
+): any {
+  testCase.ifMatch = testCase.ifMatch === "new" ? newEtag : testCase.ifMatch;
+  if (testCase.useIfMatch) {
+    headers["If-Match"] = testCase.ifMatch;
+  }
+  return headers;
+}
+
+function getHeadersForIfMatchTest(): TestHeaders {
+  const testHeaders: TestHeaders = {
+    "Content-Type": "application/json",
+    version: "",
+    "x-ms-client-request-id": "1",
+    DataServiceVersion: "3"
+  };
+  return testHeaders;
+}
+
+interface TestHeaders {
+  [key: string]: any;
+}
+
+interface IfMatchTestCase {
+  name: string;
+  body: string;
+  useIfMatch: boolean;
+  ifMatch: string;
+  restFunction: (
+    path: string,
+    body: string,
+    headers: any
+  ) => Promise<AxiosResponse<any, any>>;
+  expectedStatus: number;
+  expectSuccess: boolean;
+  errorMessage: string;
+}

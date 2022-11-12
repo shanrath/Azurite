@@ -4,17 +4,110 @@
 
 ## Upcoming Release
 
+## 2022.10 Version 3.20.1
+
 General:
 
+- Bump package version.
+
+## 2022.10 Version 3.20.0
+
+General:
+
+- Make emulator start commands async so that they can be awaited by clients.
+
+Blob:
+
+- Add support for blob batch operation.
+
+Table:
+
+- TimeStamp and Etag use the same high precision value as source.
+
+## 2022.09 Version 3.19.0
+
+General:
+
+- Bump up service API version to 2021-10-04
+- Added support for docker image on arm64 architecture.
+- Updated Readme by adding account key must be base64 encoded string.
+
+Table:
+
+- Correctly responds with status 202 on merge with non-existent entity.
+- Properly differentiate between upsert and update in batch merge and replace.
+- Added additional tests via raw REST tests.
+- Correctly deletes a table that is a substring of another table.
+- Adds Sample Go App to check that Batch responses work for Go SDK.
+- Removes extra CRLFs from all serialized Batch responses, adds missing CRLF after Etag header.
+
+## 2022.06 Version 3.18.0
+
+General:
+
+- Bump up service API version to 2021-08-06
+- Modified the error messge for invalid API version to make it more actionable.
+
+Blob:
+
+- Fixed issue that startCopyFromURL and copyFromURL API not fail, when request container if-none-match="\*" and dest blob already exist.
+
+Table:
+
+- Reject table batch request bodies exceeding 4MB.
+- Fix binary table property validation to be 64K bytes not 32K characters.
+- Does not error when table created is a substring of another table.
+- Correctly responds with status 404 on patch with non-existant entity.
+- Fix pagination when no rowkey in continuation token
+
+## 2022.04 Version 3.17.1
+
+Table:
+
+- Removes commas from RegEx checking key validity.
+- Updated property check to handle null property and added regression test.
+
+## 2022.04 Version 3.17.0
+
+General:
+
+- Bump up service API version to 2021-06-08
+- Fixed SAS validation failure for version 2020-12-06 and later
+
+Table:
+
+- Fixed empty partition key and row key handling in batch write operations.
+- Fixed batch reponse for Go SDK, includes additional CRLF on closure of changesetresponse section.
+- Removed query strings from Location and DataServiceId batch response headers.
+- Modified the deserialization of batch request for case that a raw / not url encoded % is present in the body.
+- Added additional tests and checks for table names on creation.
+- Added more granularity and precision to etags.
+- Added checks for invalid characters in partition and row keys.
+- Rejects entities with string props longer than 32K chars.
+- Added check for body length greater than 4MB.
+
+## 2022.02 Version 3.16.0
+
+General:
+
+- Bump up service API version to 2021-04-10
 - Ensure the storage location exists, and allow relative paths in the VSCode extension settings that are resolved based on the workspace folder.
 - Update Azure CI to use latest image of windows due to deprecation of `vs2017-win2016` image
+
+Blob:
+
+- Fixed issue that startCopyFromURL and copyFromURL API not respect `--disableProductStyleUrl` parameter in parse source Uri.
 
 Queue:
 
 - Fixed issue that queue list result is not in alphabetical order.
+- Fixed class name of QueueSASAuthenticator mistakenly named BlobSASAuthenticator.
 
 Table:
 
+- Fixed issues with deleting entities using empty string for RowKey.
+- Fixed HTTP 500 causes by continuation token containing non-ASCII. Values are now encoded with base64.
+- Fixed a table sas test case failure.
 - Added support for batch transaction rollback on error in batch.
 - Fixes issues with Whitespacing in Table Queries
 - Fixes issue with Edm Type Validation
@@ -24,8 +117,9 @@ Table:
 - Adds several tests for Table APIs
 - Fixes issues for upsert and merge with etag matching
 - Allow any valid weak etag even though we know it will fail with a 412
+- Added check for table query validity
 
-## 2021.10 Version 3.15.0
+## 2021.12 Version 3.15.0
 
 General:
 
@@ -36,13 +130,6 @@ General:
 Blob:
 
 - Fixed start copy blob fail with `x-ms-access-tier` header and from Archive blob in same account.
-- Fixed issue that startCopyFromURL and copyFromURL API not respect `--disableProductStyleUrl` parameter in parse source Uri.
-
-Table:
-
-- Fixes issues with deleting entities using empty string for RowKey.
-- Fixes HTTP 500 causes by continuation token containing non-ASCII. Values are now encoded with base64.
-- Fixed a table sas test case failure.
 
 ## 2021.10 Version 3.14.3
 

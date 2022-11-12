@@ -229,10 +229,7 @@ export function checkApiVersion(
   context: Context
 ): void {
   if (!validApiVersions.includes(inputApiVersion)) {
-    throw StorageErrorFactory.getInvalidHeaderValue(context, {
-      HeaderName: HeaderConstants.X_MS_VERSION,
-      HeaderValue: inputApiVersion
-    });
+    throw StorageErrorFactory.getInvalidAPIVersion(context, inputApiVersion);
   }
 }
 
@@ -261,6 +258,7 @@ export function getPayloadFormat(context: Context): string {
   return format;
 }
 
+// https://docs.microsoft.com/en-us/rest/api/storageservices/understanding-the-table-service-data-model#table-names
 export function validateTableName(context: Context, tableName: string) {
   if (tableName !== "" && (tableName!.length < 3 || tableName!.length > 63)) {
     throw StorageErrorFactory.getOutOfRangeName(context);
@@ -269,15 +267,19 @@ export function validateTableName(context: Context, tableName: string) {
   if (!reg.test(tableName!) && !tableName.startsWith("$Metric")) {
     throw StorageErrorFactory.getInvalidResourceName(context);
   }
+  if (tableName.toLowerCase() === "tables") {
+    throw StorageErrorFactory.getInvalidResourceName(context);
+  }
 }
 
-export function newTableEntityEtag(startTime: Date): string {
+export function newTableEntityEtag(highPresModTime: string): string {
   // Etag as returned by Table Storage should match W/"datetime'<ISO8601datetime>'"
-  return (
-    "W/\"datetime'" +
-    encodeURIComponent(truncatedISO8061Date(startTime, true)) +
-    "'\""
-  );
+  // as we need the same value for last Modification time, we now only accept a string here
+  return "W/\"datetime'" + encodeURIComponent(highPresModTime) + "'\"";
+}
+
+export function newHighPrecisionTimeStamp(startTime: Date): string {
+  return truncatedISO8061Date(startTime, true, true);
 }
 
 /**
@@ -287,11 +289,20 @@ export function newTableEntityEtag(startTime: Date): string {
  * @param {string} etag
  * @return {*}  {boolean}
  */
-export function checkEtagIsInvalidFormat(etag: string): boolean {
+export function isEtagValid(etag: string): boolean {
   // Weak etag is required. This is parity with Azure and legacy emulator.
   // Source for regex: https://stackoverflow.com/a/11572348
-  const match = etag.match(
-    /^[wW]\/"([^"]|\\")*"$/
-  );
+  const match = etag.match(/^[wW]\/"([^"]|\\")*"$/);
   return match === null;
+}
+
+/**
+ * Get the byte size of a string in UTF8.
+ *
+ * @public
+ * @param {Date} requestDate
+ * @returns {string}
+ */
+export function getUTF8ByteSize(text: string): number {
+  return Buffer.from(text, "utf8").length;
 }

@@ -11,14 +11,12 @@ trigger:
   - dev
 
 jobs:
-  - job: blobtestlinux
-    displayName: Blob Test Linux
+  - job: blobtestubuntu20_04
+    displayName: Blob Test Linux Ubuntu 20.04 LTS
     pool:
       vmImage: "ubuntu-latest"
     strategy:
       matrix:
-        node_8_x:
-          node_version: 8.x
         node_10_x:
           node_version: 10.x
         node_12_x:
@@ -30,10 +28,37 @@ jobs:
         displayName: "Install Node.js"
 
       - script: |
-          npm ci
+          npm ci --legacy-peer-deps
         workingDirectory: "./"
-        displayName: "npm ci"
+        displayName: "npm ci --legacy-peer-deps"
 
+      - script: |
+          npm run test:blob
+        workingDirectory: "./"
+        displayName: "npm run test:blob"
+        env: {}
+        
+  - job: blobtestubuntu18_04
+    displayName: Blob Test Linux Ubuntu 18.04
+    pool:
+      vmImage: "ubuntu-latest"
+    strategy:
+      matrix:
+        node_10_x:
+          node_version: 10.x
+        node_12_x:
+          node_version: 12.x
+    steps:
+      - task: NodeTool@0
+        inputs:
+          versionSpec: "$(node_version)"
+        displayName: "Install Node.js"
+  
+      - script: |
+          npm ci --legacy-peer-deps
+        workingDirectory: "./"
+        displayName: "npm ci --legacy-peer-deps"
+  
       - script: |
           npm run test:blob
         workingDirectory: "./"
@@ -43,11 +68,9 @@ jobs:
   - job: blobtestwin
     displayName: Blob Test Windows
     pool:
-      vmImage: 'windows-2022'
+      vmImage: "windows-latest"
     strategy:
       matrix:
-        node_8_x:
-          node_version: 8.x
         node_10_x:
           node_version: 10.x
         node_12_x:
@@ -59,9 +82,9 @@ jobs:
         displayName: "Install Node.js"
 
       - script: |
-          npm ci
+          npm ci --legacy-peer-deps
         workingDirectory: "./"
-        displayName: "npm ci"
+        displayName: "npm ci --legacy-peer-deps"
 
       - script: |
           npm run test:blob
@@ -72,11 +95,9 @@ jobs:
   - job: blobtestmac
     displayName: Blob Test Mac
     pool:
-      vmImage: "macOS-10.15"
+      vmImage: "macOS-latest"
     strategy:
       matrix:
-        node_8_x:
-          node_version: 8.x
         node_10_x:
           node_version: 10.x
         node_12_x:
@@ -88,9 +109,9 @@ jobs:
         displayName: "Install Node.js"
 
       - script: |
-          npm ci
+          npm ci --legacy-peer-deps
         workingDirectory: "./"
-        displayName: "npm ci"
+        displayName: "npm ci --legacy-peer-deps"
 
       - script: |
           npm run test:blob
@@ -104,8 +125,6 @@ jobs:
       vmImage: "ubuntu-latest"
     strategy:
       matrix:
-        node_8_x:
-          node_version: 8.x
         node_10_x:
           node_version: 10.x
         node_12_x:
@@ -117,9 +136,9 @@ jobs:
         displayName: "Install Node.js"
 
       - script: |
-          npm ci
+          npm ci --legacy-peer-deps
         workingDirectory: "./"
-        displayName: "npm ci"
+        displayName: "npm ci --legacy-peer-deps"
 
       - script: |
           docker run --name mysql -p 13306:3306 -e MYSQL_ROOT_PASSWORD=my-secret-pw -d mysql
@@ -141,8 +160,6 @@ jobs:
       vmImage: "ubuntu-latest"
     strategy:
       matrix:
-        node_8_x:
-          node_version: 8.x
         node_10_x:
           node_version: 10.x
         node_12_x:
@@ -154,9 +171,9 @@ jobs:
         displayName: "Install Node.js"
 
       - script: |
-          npm ci
+          npm ci --legacy-peer-deps
         workingDirectory: "./"
-        displayName: "npm ci"
+        displayName: "npm ci --legacy-peer-deps"
 
       - script: |
           npm run test:queue
@@ -167,11 +184,9 @@ jobs:
   - job: queuetestwin
     displayName: Queue Test Windows
     pool:
-      vmImage: 'windows-2022'
+      vmImage: "windows-latest"
     strategy:
       matrix:
-        node_8_x:
-          node_version: 8.x
         node_10_x:
           node_version: 10.x
         node_12_x:
@@ -183,9 +198,9 @@ jobs:
         displayName: "Install Node.js"
 
       - script: |
-          npm ci
+          npm ci --legacy-peer-deps
         workingDirectory: "./"
-        displayName: "npm ci"
+        displayName: "npm ci --legacy-peer-deps"
 
       - script: |
           npm run test:queue
@@ -196,11 +211,9 @@ jobs:
   - job: queuetestmac
     displayName: Queue Test Mac
     pool:
-      vmImage: "macOS-10.15"
+      vmImage: "macOS-latest"
     strategy:
       matrix:
-        node_8_x:
-          node_version: 8.x
         node_10_x:
           node_version: 10.x
         node_12_x:
@@ -212,9 +225,9 @@ jobs:
         displayName: "Install Node.js"
 
       - script: |
-          npm ci
+          npm ci --legacy-peer-deps
         workingDirectory: "./"
-        displayName: "npm ci"
+        displayName: "npm ci --legacy-peer-deps"
 
       - script: |
           npm run test:queue
@@ -228,12 +241,11 @@ jobs:
       vmImage: "ubuntu-latest"
     strategy:
       matrix:
-        node_8_x:
-          node_version: 8.x
-        node_10_x:
-          node_version: 10.x
-        node_12_x:
-          node_version: 12.x
+        # Table tests no longer suport older node versions
+        node_14_x:
+          node_version: 14.x
+        node_16_x:
+          node_version: 16.x
     steps:
       - task: NodeTool@0
         inputs:
@@ -241,9 +253,9 @@ jobs:
         displayName: "Install Node.js"
 
       - script: |
-          npm ci
+          npm ci --legacy-peer-deps
         workingDirectory: "./"
-        displayName: "npm ci"
+        displayName: "npm ci --legacy-peer-deps"
 
       - script: |
           npm run test:table
@@ -254,15 +266,14 @@ jobs:
   - job: tabletestwin
     displayName: Table Test Windows
     pool:
-      vmImage: 'windows-2022'
+      vmImage: "windows-latest"
     strategy:
       matrix:
-        node_8_x:
-          node_version: 8.x
-        node_10_x:
-          node_version: 10.x
-        node_12_x:
-          node_version: 12.x
+        # Table tests no longer suport older node versions
+        node_14_x:
+          node_version: 14.x
+        node_16_x:
+          node_version: 16.x
     steps:
       - task: NodeTool@0
         inputs:
@@ -270,9 +281,9 @@ jobs:
         displayName: "Install Node.js"
 
       - script: |
-          npm ci
+          npm ci --legacy-peer-deps
         workingDirectory: "./"
-        displayName: "npm ci"
+        displayName: "npm ci --legacy-peer-deps"
 
       - script: |
           npm run test:table
@@ -283,15 +294,14 @@ jobs:
   - job: tabletestmac
     displayName: Table Test Mac
     pool:
-      vmImage: "macOS-10.15"
+      vmImage: "macOS-latest"
     strategy:
       matrix:
-        node_8_x:
-          node_version: 8.x
-        node_10_x:
-          node_version: 10.x
-        node_12_x:
-          node_version: 12.x
+        # Table tests no longer suport older node versions
+        node_14_x:
+          node_version: 14.x
+        node_16_x:
+          node_version: 16.x
     steps:
       - task: NodeTool@0
         inputs:
@@ -299,9 +309,9 @@ jobs:
         displayName: "Install Node.js"
 
       - script: |
-          npm ci
+          npm ci --legacy-peer-deps
         workingDirectory: "./"
-        displayName: "npm ci"
+        displayName: "npm ci --legacy-peer-deps"
 
       - script: |
           npm run test:table
@@ -315,12 +325,13 @@ jobs:
       vmImage: "ubuntu-latest"
     strategy:
       matrix:
-        node_8_x:
-          node_version: 8.x
-        node_10_x:
-          node_version: 10.x
-        node_12_x:
-          node_version: 12.x
+        # Table tests no longer suport older node versions
+        # skip node 14 Azurite install test, since it has issue iwth new npm, which is not azurite issue. 
+        # Track with https://github.com/Azure/Azurite/issues/1550. Will add node 14 back later when the issue resolved.
+        #node_14_x:
+        #  node_version: 14.x
+        node_16_x:
+          node_version: 16.x
     steps:
       - task: NodeTool@0
         inputs:
@@ -328,9 +339,9 @@ jobs:
         displayName: "Install Node.js"
 
       - script: |
-          npm ci
+          npm ci --legacy-peer-deps
         workingDirectory: "./"
-        displayName: "npm ci"
+        displayName: "npm ci --legacy-peer-deps"
 
       - script: |
           npm run lint
@@ -350,7 +361,7 @@ jobs:
       - script: |
           sudo npm uninstall -g azurite
           npm run build
-          sudo npm install -g
+          npm install --location=global
           azurite -v
           azurite-blob -v
           azurite-queue -v
@@ -361,15 +372,14 @@ jobs:
   - job: azuritenodejswin
     displayName: Azurite Windows
     pool:
-      vmImage: 'windows-2022'
+      vmImage: "windows-latest"
     strategy:
       matrix:
-        node_8_x:
-          node_version: 8.x
-        node_10_x:
-          node_version: 10.x
-        node_12_x:
-          node_version: 12.x
+        # Table tests no longer suport older node versions
+        node_14_x:
+          node_version: 14.x
+        node_16_x:
+          node_version: 16.x
     steps:
       - task: NodeTool@0
         inputs:
@@ -377,9 +387,9 @@ jobs:
         displayName: "Install Node.js"
 
       - script: |
-          npm ci
+          npm ci --legacy-peer-deps
         workingDirectory: "./"
-        displayName: "npm ci"
+        displayName: "npm ci --legacy-peer-deps"
 
       - script: |
           npm run lint
@@ -410,15 +420,14 @@ jobs:
   - job: azuritenodejsmac
     displayName: Azurite Mac
     pool:
-      vmImage: "macOS-10.15"
+      vmImage: "macOS-latest"
     strategy:
       matrix:
-        node_8_x:
-          node_version: 8.x
-        node_10_x:
-          node_version: 10.x
-        node_12_x:
-          node_version: 12.x
+        # Table tests no longer suport node_8_x
+        node_14_x:
+          node_version: 14.x
+        node_16_x:
+          node_version: 16.x
     steps:
       - task: NodeTool@0
         inputs:
@@ -426,9 +435,9 @@ jobs:
         displayName: "Install Node.js"
 
       - script: |
-          npm ci
+          npm ci --legacy-peer-deps
         workingDirectory: "./"
-        displayName: "npm ci"
+        displayName: "npm ci --legacy-peer-deps"
 
       - script: |
           npm run lint
@@ -462,9 +471,9 @@ jobs:
       vmImage: "ubuntu-latest"
     steps:
       - script: |
-          npm ci
+          npm ci --legacy-peer-deps
         workingDirectory: "./"
-        displayName: "npm ci"
+        displayName: "npm ci --legacy-peer-deps"
 
       - script: |
           npm run docker:build
@@ -493,7 +502,44 @@ jobs:
   - job: exetest
     displayName: .exe Test Windows
     pool:
-      vmImage: 'windows-2022'
+      vmImage: "windows-latest"
+    strategy:
+      matrix:
+        # one of the node modules use a try/catch syntax not supported by node 8
+        # node_8_x:
+        #   node_version: 8.x
+        # our .exe build program is currently incompatible with node 10
+        # node_10_x:
+        #   node_version: 10.x
+        node_12_x:
+          node_version: 14.x
+    steps:
+      - task: NodeTool@0
+        inputs:
+          versionSpec: "$(node_version)"
+        displayName: "Install Node.js"
+
+      - script: |
+          npm ci --legacy-peer-deps
+        workingDirectory: "./"
+        displayName: "npm ci --legacy-peer-deps"
+
+      - script: |
+          npm run build:exe
+        workingDirectory: "./"
+        displayName: "npm run build:exe"
+        env: {}
+
+      - script: |
+          npm run test:exe
+        workingDirectory: "./"
+        displayName: "npm run test:exe"
+        env: {}
+
+  - job: linuxTest
+    displayName: binary Test Linux
+    pool:
+      vmImage: "ubuntu-latest"
     strategy:
       matrix:
         # one of the node modules use a try/catch syntax not supported by node 8
@@ -511,18 +557,18 @@ jobs:
         displayName: "Install Node.js"
 
       - script: |
-          npm ci
+          npm ci --legacy-peer-deps
         workingDirectory: "./"
-        displayName: "npm ci"
+        displayName: "npm ci --legacy-peer-deps"
 
       - script: |
-          npm run build:exe
+          npm run build:linux
         workingDirectory: "./"
-        displayName: "npm run build:exe"
+        displayName: "npm run build:linux"
         env: {}
 
       - script: |
-          npm run test:exe
+          npm run test:linux
         workingDirectory: "./"
-        displayName: "npm run test:exe"
+        displayName: "npm run test:linux"
         env: {}

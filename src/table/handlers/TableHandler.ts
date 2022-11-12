@@ -1,7 +1,11 @@
 import toReadableStream from "to-readable-stream";
 
 import BufferStream from "../../common/utils/BufferStream";
-import { checkEtagIsInvalidFormat, newTableEntityEtag } from "../utils/utils";
+import {
+  isEtagValid,
+  getUTF8ByteSize,
+  newTableEntityEtag
+} from "../utils/utils";
 import TableBatchOrchestrator from "../batch/TableBatchOrchestrator";
 import TableBatchUtils from "../batch/TableBatchUtils";
 import TableStorageContext from "../context/TableStorageContext";
@@ -12,6 +16,8 @@ import Context from "../generated/Context";
 import ITableHandler from "../generated/handlers/ITableHandler";
 import { Entity, Table } from "../persistence/ITableMetadataStore";
 import {
+  DEFAULT_KEY_MAX_LENGTH,
+  BODY_SIZE_MAX,
   DEFAULT_TABLE_LISTENING_PORT,
   DEFAULT_TABLE_SERVER_HOST_NAME,
   FULL_METADATA_ACCEPT,
@@ -21,7 +27,8 @@ import {
   RETURN_CONTENT,
   RETURN_NO_CONTENT,
   TABLE_API_VERSION,
-  TABLE_SERVICE_PERMISSION
+  TABLE_SERVICE_PERMISSION,
+  ODATA_TYPE
 } from "../utils/constants";
 import {
   getEntityOdataAnnotationsForResponse,
@@ -32,6 +39,8 @@ import {
   validateTableName
 } from "../utils/utils";
 import BaseHandler from "./BaseHandler";
+import { EdmType, getEdmType } from "../entity/IEdmType";
+import { truncatedISO8061Date } from "../../common/utils/utils";
 
 interface IPartialResponsePreferProperties {
   statusCode: 200 | 201 | 204;
@@ -53,7 +62,8 @@ export default class TableHandler extends BaseHandler implements ITableHandler {
     const tableContext = new TableStorageContext(context);
     const accept = this.getAndCheckPayloadFormat(tableContext);
     const account = this.getAndCheckAccountName(tableContext);
-    const table = tableProperties.tableName; // Table name is in request body instead of URL
+    // Table name is in request body instead of URL
+    const table = tableProperties.tableName;
     if (table === undefined) {
       throw StorageErrorFactory.getTableNameEmpty(context);
     }
@@ -174,6 +184,7 @@ export default class TableHandler extends BaseHandler implements ITableHandler {
     const table = this.getAndCheckTableName(tableContext);
     const accept = this.getAndCheckPayloadFormat(tableContext);
     const prefer = this.getAndCheckPreferHeader(tableContext);
+    this.checkBodyLimit(context, context.request?.getBody());
 
     // curently unable to use checking functions as the partitionKey
     // and rowKey are not coming through the context.
@@ -188,18 +199,21 @@ export default class TableHandler extends BaseHandler implements ITableHandler {
       throw StorageErrorFactory.getPropertiesNeedValue(context);
     }
 
-    const entity: Entity = {
-      PartitionKey: options.tableEntityProperties.PartitionKey,
-      RowKey: options.tableEntityProperties.RowKey,
-      properties: options.tableEntityProperties,
-      lastModifiedTime: context.startTime!,
-      eTag: newTableEntityEtag(context.startTime!)
-    };
+    // check that key properties are valid
+    this.validateKey(context, options.tableEntityProperties.PartitionKey);
+    this.validateKey(context, options.tableEntityProperties.RowKey);
 
-    let nomarlizedEntity;
+    this.checkProperties(context, options.tableEntityProperties);
+    const entity: Entity = this.createPersistedEntity(
+      context,
+      options,
+      options.tableEntityProperties.PartitionKey,
+      options.tableEntityProperties.RowKey
+    );
+    let normalizedEntity;
     try {
-      nomarlizedEntity = new NormalizedEntity(entity);
-      nomarlizedEntity.normalize();
+      normalizedEntity = new NormalizedEntity(entity);
+      normalizedEntity.normalize();
     } catch (e: any) {
       this.logger.error(
         `TableHandler:insertEntity() ${e.name} ${JSON.stringify(e.stack)}`,
@@ -254,7 +268,7 @@ export default class TableHandler extends BaseHandler implements ITableHandler {
       // }
 
       // response.body = new BufferStream(Buffer.from(JSON.stringify(body)));
-      const rawResponse = nomarlizedEntity.toResponseString(accept, body);
+      const rawResponse = normalizedEntity.toResponseString(accept, body);
       this.logger.debug(
         `TableHandler:insertEntity() Raw response string is ${JSON.stringify(
           rawResponse
@@ -270,21 +284,90 @@ export default class TableHandler extends BaseHandler implements ITableHandler {
     return response;
   }
 
+  private createPersistedEntity(
+    context: Context,
+    options:
+      | Models.TableMergeEntityOptionalParams
+      | Models.TableInsertEntityOptionalParams
+      | Models.TableUpdateEntityOptionalParams,
+    partitionKey: string,
+    rowKey: string
+  ) {
+    const modTime = truncatedISO8061Date(context.startTime!, true, true);
+    const eTag = newTableEntityEtag(modTime);
+
+    const entity: Entity = {
+      PartitionKey: partitionKey,
+      RowKey: rowKey,
+      properties:
+        options.tableEntityProperties === undefined
+          ? {}
+          : options.tableEntityProperties,
+      lastModifiedTime: modTime,
+      eTag
+    };
+    return entity;
+  }
+
+  private static getAndCheck(
+    key: string | undefined,
+    getFromContext: () => string,
+    contextForThrow: Context
+  ): string {
+    if (key !== undefined) {
+      return key;
+    }
+
+    const fromContext = getFromContext();
+    if (fromContext === undefined) {
+      throw StorageErrorFactory.getPropertiesNeedValue(contextForThrow);
+    }
+
+    return fromContext;
+  }
+
+  private static getAndCheckKeys(
+    partitionKey: string | undefined,
+    rowKey: string | undefined,
+    tableContext: TableStorageContext,
+    contextForThrow: Context
+  ) {
+    partitionKey = TableHandler.getAndCheck(
+      partitionKey,
+      () => tableContext.partitionKey!,
+      contextForThrow
+    );
+    rowKey = TableHandler.getAndCheck(
+      rowKey,
+      () => tableContext.rowKey!,
+      contextForThrow
+    );
+
+    return [partitionKey, rowKey];
+  }
+
   // TODO: Create data structures to hold entity properties and support serialize, merge, deserialize, filter
   // Note: Batch is using the partition key and row key args, handler receives these values from middleware via
   // context
   public async updateEntity(
     _table: string,
-    partitionKey: string,
-    rowKey: string,
+    partitionKey: string | undefined,
+    rowKey: string | undefined,
     options: Models.TableUpdateEntityOptionalParams,
     context: Context
   ): Promise<Models.TableUpdateEntityResponse> {
     const tableContext = new TableStorageContext(context);
     const account = this.getAndCheckAccountName(tableContext);
     const table = this.getAndCheckTableName(tableContext);
-    partitionKey = partitionKey || this.getAndCheckPartitionKey(tableContext);
-    rowKey = rowKey || this.getAndCheckRowKey(tableContext);
+    this.checkBodyLimit(context, context.request?.getBody());
+
+    [partitionKey, rowKey] = TableHandler.getAndCheckKeys(
+      partitionKey,
+      rowKey,
+      tableContext,
+      context
+    );
+
     const ifMatch = options.ifMatch;
 
     if (!options.tableEntityProperties) {
@@ -300,6 +383,8 @@ export default class TableHandler extends BaseHandler implements ITableHandler {
       );
     }
 
+    this.checkProperties(context, options.tableEntityProperties);
+
     // Test if etag is available
     // this is considered an upsert if no etag header, an empty header is an error.
     // https://docs.microsoft.com/en-us/rest/api/storageservices/insert-or-replace-entity
@@ -307,26 +392,25 @@ export default class TableHandler extends BaseHandler implements ITableHandler {
       throw StorageErrorFactory.getPreconditionFailed(context);
     }
     if (options?.ifMatch && options.ifMatch !== "*") {
-      if (checkEtagIsInvalidFormat(options.ifMatch)) {
+      if (isEtagValid(options.ifMatch)) {
         throw StorageErrorFactory.getInvalidOperation(context);
       }
     }
+    // check that key properties are valid
+    this.validateKey(context, partitionKey);
+    this.validateKey(context, rowKey);
 
-    const eTag = newTableEntityEtag(context.startTime!);
+    const entity: Entity = this.createPersistedEntity(
+      context,
+      options,
+      partitionKey,
+      rowKey
+    );
 
-    // Entity, which is used to update an existing entity
-    const entity: Entity = {
-      PartitionKey: partitionKey,
-      RowKey: rowKey,
-      properties: options.tableEntityProperties,
-      lastModifiedTime: context.startTime!,
-      eTag
-    };
-
-    let nomarlizedEntity;
+    let normalizedEntity;
     try {
-      nomarlizedEntity = new NormalizedEntity(entity);
-      nomarlizedEntity.normalize();
+      normalizedEntity = new NormalizedEntity(entity);
+      normalizedEntity.normalize();
     } catch (e: any) {
       this.logger.error(
         `TableHandler:updateEntity() ${e.name} ${JSON.stringify(e.stack)}`,
@@ -350,7 +434,7 @@ export default class TableHandler extends BaseHandler implements ITableHandler {
       requestId: tableContext.contextID,
       version: TABLE_API_VERSION,
       date: context.startTime,
-      eTag,
+      eTag: entity.eTag,
       statusCode: 204
     };
 
@@ -359,22 +443,28 @@ export default class TableHandler extends BaseHandler implements ITableHandler {
 
   public async mergeEntity(
     _table: string,
-    partitionKey: string,
-    rowKey: string,
+    partitionKey: string | undefined,
+    rowKey: string | undefined,
     options: Models.TableMergeEntityOptionalParams,
     context: Context
   ): Promise<Models.TableMergeEntityResponse> {
     const tableContext = new TableStorageContext(context);
     const account = this.getAndCheckAccountName(tableContext);
     const table = this.getAndCheckTableName(tableContext);
-    partitionKey = partitionKey || this.getAndCheckPartitionKey(tableContext);
-    rowKey = rowKey || this.getAndCheckRowKey(tableContext);
+    this.checkBodyLimit(context, context.request?.getBody());
+
+    [partitionKey, rowKey] = TableHandler.getAndCheckKeys(
+      partitionKey,
+      rowKey,
+      tableContext,
+      context
+    );
 
     if (!options.tableEntityProperties) {
       throw StorageErrorFactory.getPropertiesNeedValue(context);
     }
     if (options?.ifMatch && options.ifMatch !== "*" && options.ifMatch !== "") {
-      if (checkEtagIsInvalidFormat(options.ifMatch)) {
+      if (isEtagValid(options.ifMatch)) {
         throw StorageErrorFactory.getInvalidOperation(context);
       }
     }
@@ -387,21 +477,21 @@ export default class TableHandler extends BaseHandler implements ITableHandler {
         `TableHandler:mergeEntity() Incoming PartitionKey:${partitionKey} RowKey:${rowKey} in URL parameters don't align with entity body PartitionKey:${options.tableEntityProperties.PartitionKey} RowKey:${options.tableEntityProperties.RowKey}.`
       );
     }
+    // check that key properties are valid
+    this.validateKey(context, partitionKey);
+    this.validateKey(context, rowKey);
 
-    const eTag = newTableEntityEtag(context.startTime!);
-
-    const entity: Entity = {
-      PartitionKey: partitionKey,
-      RowKey: rowKey,
-      properties: options.tableEntityProperties,
-      lastModifiedTime: context.startTime!,
-      eTag
-    };
-
-    let nomarlizedEntity;
+    this.checkProperties(context, options.tableEntityProperties);
+    const entity: Entity = this.createPersistedEntity(
+      context,
+      options,
+      partitionKey,
+      rowKey
+    );
+    let normalizedEntity;
     try {
-      nomarlizedEntity = new NormalizedEntity(entity);
-      nomarlizedEntity.normalize();
+      normalizedEntity = new NormalizedEntity(entity);
+      normalizedEntity.normalize();
     } catch (e: any) {
       this.logger.error(
         `TableHandler:mergeEntity() ${e.name} ${JSON.stringify(e.stack)}`,
@@ -425,7 +515,7 @@ export default class TableHandler extends BaseHandler implements ITableHandler {
       version: TABLE_API_VERSION,
       date: context.startTime,
       statusCode: 204,
-      eTag
+      eTag: entity.eTag
     };
 
     return response;
@@ -433,8 +523,8 @@ export default class TableHandler extends BaseHandler implements ITableHandler {
 
   public async deleteEntity(
     _table: string,
-    partitionKey: string,
-    rowKey: string,
+    partitionKey: string | undefined,
+    rowKey: string | undefined,
     ifMatch: string,
     options: Models.TableDeleteEntityOptionalParams,
     context: Context
@@ -442,16 +532,17 @@ export default class TableHandler extends BaseHandler implements ITableHandler {
     const tableContext = new TableStorageContext(context);
     const accountName = tableContext.account;
 
-    partitionKey = partitionKey || tableContext.partitionKey!; // Get partitionKey from context
-    rowKey = rowKey || tableContext.rowKey!; // Get rowKey from context
+    [partitionKey, rowKey] = TableHandler.getAndCheckKeys(
+      partitionKey,
+      rowKey,
+      tableContext,
+      context
+    );
 
-    if (partitionKey === undefined || rowKey === undefined) {
-      throw StorageErrorFactory.getPropertiesNeedValue(context);
-    }
     if (ifMatch === "" || ifMatch === undefined) {
       throw StorageErrorFactory.getPreconditionFailed(context);
     }
-    if (ifMatch !== "*" && checkEtagIsInvalidFormat(ifMatch)) {
+    if (ifMatch !== "*" && isEtagValid(ifMatch)) {
       throw StorageErrorFactory.getInvalidOperation(context);
     }
     // currently the props are not coming through as args, so we take them from the table context
@@ -483,6 +574,7 @@ export default class TableHandler extends BaseHandler implements ITableHandler {
     const table = this.getAndCheckTableName(tableContext);
     const account = this.getAndCheckAccountName(tableContext);
     const accept = this.getAndCheckPayloadFormat(tableContext);
+    this.checkBodyLimit(context, context.request?.getBody());
 
     const [result, nextPartitionKey, nextRowKey] =
       await this.metadataStore.queryTableEntities(
@@ -541,9 +633,9 @@ export default class TableHandler extends BaseHandler implements ITableHandler {
         entity["odata.editLink"] = annotation.odataeditLink;
       }
 
-      const nomarlizedEntity = new NormalizedEntity(element);
+      const normalizedEntity = new NormalizedEntity(element);
       entities.push(
-        nomarlizedEntity.toResponseString(accept, entity, selectSet)
+        normalizedEntity.toResponseString(accept, entity, selectSet)
       );
     });
 
@@ -577,16 +669,22 @@ export default class TableHandler extends BaseHandler implements ITableHandler {
 
   public async queryEntitiesWithPartitionAndRowKey(
     _table: string,
-    partitionKey: string,
-    rowKey: string,
+    partitionKey: string | undefined,
+    rowKey: string | undefined,
     options: Models.TableQueryEntitiesWithPartitionAndRowKeyOptionalParams,
     context: Context
   ): Promise<Models.TableQueryEntitiesWithPartitionAndRowKeyResponse> {
     const tableContext = new TableStorageContext(context);
     const account = this.getAndCheckAccountName(tableContext);
     const table = _table ? _table : this.getAndCheckTableName(tableContext);
-    partitionKey = partitionKey || this.getAndCheckPartitionKey(tableContext);
-    rowKey = rowKey || this.getAndCheckRowKey(tableContext);
+
+    [partitionKey, rowKey] = TableHandler.getAndCheckKeys(
+      partitionKey,
+      rowKey,
+      tableContext,
+      context
+    );
+
     const accept = this.getAndCheckPayloadFormat(tableContext);
 
     const entity =
@@ -608,6 +706,7 @@ export default class TableHandler extends BaseHandler implements ITableHandler {
       date: tableContext.startTime,
       clientRequestId: options.requestId,
       requestId: context.contextID,
+      eTag: entity.eTag,
       version: TABLE_API_VERSION
     };
 
@@ -645,8 +744,8 @@ export default class TableHandler extends BaseHandler implements ITableHandler {
       selectSet = new Set(selectArray);
     }
 
-    const nomarlizedEntity = new NormalizedEntity(entity);
-    const rawResponse = nomarlizedEntity.toResponseString(
+    const normalizedEntity = new NormalizedEntity(entity);
+    const rawResponse = normalizedEntity.toResponseString(
       accept,
       body,
       selectSet
@@ -737,6 +836,7 @@ export default class TableHandler extends BaseHandler implements ITableHandler {
     const tableContext = new TableStorageContext(context);
     const accountName = this.getAndCheckAccountName(tableContext);
     const tableName = this.getAndCheckTableName(tableContext);
+    this.checkBodyLimit(context, context.request?.getBody());
 
     // The policy number should be within 5, the permission should follow the Table permission.
     // See as https://docs.microsoft.com/en-us/rest/api/storageservices/create-service-sas.
@@ -792,6 +892,13 @@ export default class TableHandler extends BaseHandler implements ITableHandler {
     context: Context
   ): Promise<Models.TableBatchResponse> {
     const tableCtx = new TableStorageContext(context);
+
+    if (contentLength && contentLength > BODY_SIZE_MAX) {
+      throw StorageErrorFactory.getRequestBodyTooLarge(context);
+    } else {
+      this.checkBodyLimit(context, context.request?.getBody());
+    }
+
     const contentTypeResponse = tableCtx.request
       ?.getHeader("content-type")
       ?.replace("batch", "batchresponse");
@@ -880,22 +987,6 @@ export default class TableHandler extends BaseHandler implements ITableHandler {
     return table;
   }
 
-  private getAndCheckPartitionKey(context: TableStorageContext): string {
-    const partitionKey = context.partitionKey;
-    if (partitionKey === undefined) {
-      throw StorageErrorFactory.getTableNameEmpty(context);
-    }
-    return partitionKey;
-  }
-
-  private getAndCheckRowKey(context: TableStorageContext): string {
-    const rowKey = context.rowKey;
-    if (rowKey === undefined) {
-      throw StorageErrorFactory.getTableNameEmpty(context);
-    }
-    return rowKey;
-  }
-
   private updateResponseAccept(
     context: TableStorageContext,
     accept?: string
@@ -920,5 +1011,83 @@ export default class TableHandler extends BaseHandler implements ITableHandler {
       response.preferenceApplied = RETURN_CONTENT;
     }
     return response;
+  }
+
+  /**
+   * Checks if key is valid based on rules outlined here:
+   * https://docs.microsoft.com/en-us/rest/api/storageservices/Understanding-the-Table-Service-Data-Model#characters-disallowed-in-key-fields
+   * Checks that key length is less than 1Kib (1024 chars)
+   * Checks for invalid chars
+   * @private
+   * @param {string} key
+   * @return {*}  {boolean}
+   * @memberof TableHandler
+   */
+  private validateKey(context: Context, key: string) {
+    // key is a string value that may be up to 1 KiB in size.
+    // although a little arbitrary, for performance and
+    // generally a better idea, choosing a shorter length
+    if (key !== undefined && key.length > DEFAULT_KEY_MAX_LENGTH) {
+      throw StorageErrorFactory.getInvalidInput(context);
+    }
+    const match = key.match(/[\u0000-\u001f\u007f-\u009f\/\\\#\?]+/);
+    if (match !== null && match.length > 0) {
+      throw StorageErrorFactory.getInvalidInput(context);
+    }
+  }
+
+  /**
+   * Checks that properties are valid according to rules given here:
+   * https://docs.microsoft.com/en-us/rest/api/storageservices/understanding-the-table-service-data-model#property-types
+   *
+   * @private
+   * @param {Context} context
+   * @param {{
+   *       [propertyName: string]: any;
+   *     }} properties
+   * @memberof TableHandler
+   */
+  private checkProperties(
+    context: Context,
+    properties: {
+      [propertyName: string]: any;
+    }
+  ) {
+    for (const prop in properties) {
+      if (properties.hasOwnProperty(prop)) {
+        if (
+          null !== properties[prop] &&
+          undefined !== properties[prop].length
+        ) {
+          const typeKey = `${prop}${ODATA_TYPE}`;
+          let type;
+          if (properties[typeKey]) {
+            type = getEdmType(properties[typeKey]);
+          }
+          if (type === EdmType.Binary) {
+            if (Buffer.from(properties[prop], "base64").length > 64 * 1024) {
+              throw StorageErrorFactory.getPropertyValueTooLargeError(context);
+            }
+          } else if (properties[prop].length > 32 * 1024) {
+            throw StorageErrorFactory.getPropertyValueTooLargeError(context);
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Checks the size of the body against service limit as per documentation
+   * https://docs.microsoft.com/en-us/troubleshoot/azure/general/request-body-large
+   *
+   * @private
+   * @param {Context} context
+   * @param {string} body
+   * @memberof TableHandler
+   */
+  private checkBodyLimit(context: Context, body: string | undefined) {
+    if (undefined !== body && getUTF8ByteSize(body) > BODY_SIZE_MAX) {
+      throw StorageErrorFactory.getRequestBodyTooLarge(context);
+    }
   }
 }

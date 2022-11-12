@@ -92,6 +92,8 @@ export default class BlobRequestListenerFactory
         loose
       ),
       containerHandler: new ContainerHandler(
+        this.accountDataStore,
+        this.oauth,
         this.metadataStore,
         this.extentStore,
         logger,
@@ -105,6 +107,8 @@ export default class BlobRequestListenerFactory
         pageBlobRangesManager
       ),
       serviceHandler: new ServiceHandler(
+        this.accountDataStore,
+        this.oauth,
         this.metadataStore,
         this.extentStore,
         logger,
@@ -133,7 +137,7 @@ export default class BlobRequestListenerFactory
     }
 
     // Manually created middleware to deserialize feature related context which swagger doesn"t know
-    app.use(createStorageBlobContextMiddleware(this.skipApiVersionCheck, this.disableProductStyleUrl));
+    app.use(createStorageBlobContextMiddleware(this.skipApiVersionCheck, this.disableProductStyleUrl, this.loose));
 
     // Dispatch incoming HTTP request to specific operation
     app.use(middlewareFactory.createDispatchMiddleware());

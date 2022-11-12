@@ -24,8 +24,7 @@ import {
 export async function postToAzurite(
   path: string,
   body: string,
-  headers: any,
-  useFetch?: boolean
+  headers: any
 ): Promise<AxiosResponse<any, any>> {
   const url = `${TableEntityTestConfig.protocol}://${
     TableEntityTestConfig.host
@@ -38,9 +37,7 @@ export async function postToAzurite(
 }
 
 /**
- * Submits POST request to Azurite table service on the path given
- * This could be modified to accept the entire URL, rather than just path
- * ToDo: Need to consider cases with query strings etc.
+ * Submits GET request to Azurite table service on the path given
  *
  * @export
  * @param {string} path
@@ -49,8 +46,7 @@ export async function postToAzurite(
  */
 export async function getToAzurite(
   path: string,
-  headers: any,
-  useFetch?: boolean
+  headers: any
 ): Promise<AxiosResponse<any, any>> {
   const url = `${TableEntityTestConfig.protocol}://${TableEntityTestConfig.host}:${TableEntityTestConfig.port}/${TableEntityTestConfig.accountName}/${path}`;
   const requestConfig = axiosRequestConfig(url, path, headers);
@@ -92,4 +88,114 @@ function generateSas(): string {
   });
 
   return new AzureSASCredential(accountSas).signature;
+}
+
+/**
+ * Sends raw patch request to Azurite
+ *
+ * @export
+ * @param {string} path
+ * @param {string} body
+ * @param {*} headers
+ * @return {*}  {Promise<AxiosResponse<any, any>>}
+ */
+export async function patchToAzurite(
+  path: string,
+  body: string,
+  headers: any
+): Promise<AxiosResponse<any, any>> {
+  const url = `${TableEntityTestConfig.protocol}://${
+    TableEntityTestConfig.host
+  }:${TableEntityTestConfig.port}/${
+    TableEntityTestConfig.accountName
+  }/${path}?${generateSas()}`;
+  const requestConfig = axiosRequestConfig(url, path, headers);
+  const result = await axios.patch(url, body, requestConfig);
+  return result;
+}
+
+/**
+ * Sends raw put request to Azurite
+ *
+ * @export
+ * @param {string} path
+ * @param {string} body
+ * @param {*} headers
+ * @return {*}  {Promise<AxiosResponse<any, any>>}
+ */
+export async function putToAzurite(
+  path: string,
+  body: string,
+  headers: any
+): Promise<AxiosResponse<any, any>> {
+  const url = `${TableEntityTestConfig.protocol}://${
+    TableEntityTestConfig.host
+  }:${TableEntityTestConfig.port}/${
+    TableEntityTestConfig.accountName
+  }/${path}?${generateSas()}`;
+  try {
+    const requestConfig = axiosRequestConfig(url, path, headers);
+    const result = await axios.put(url, body, requestConfig);
+    return result;
+  } catch (err: any) {
+    throw err;
+  }
+}
+
+/**
+ * Sends raw merge request to Azurite
+ *
+ * @export
+ * @param {string} path
+ * @param {string} body
+ * @param {*} headers
+ * @return {*}  {Promise<AxiosResponse<any, any>>}
+ */
+export async function mergeToAzurite(
+  path: string,
+  body: string,
+  headers: any
+): Promise<AxiosResponse<any, any>> {
+  const url = `${TableEntityTestConfig.protocol}://${
+    TableEntityTestConfig.host
+  }:${TableEntityTestConfig.port}/${
+    TableEntityTestConfig.accountName
+  }/${path}?${generateSas()}`;
+  const requestConfig = axiosRequestConfig(url, path, headers);
+  const result = await axios({
+    method: "merge",
+    url,
+    data: body,
+    headers: requestConfig.headers
+  });
+  return result;
+}
+
+/**
+ * Sends raw delete request to Azurite
+ *
+ * @export
+ * @param {string} path
+ * @param {string} body
+ * @param {*} headers
+ * @return {*}  {Promise<AxiosResponse<any, any>>}
+ */
+export async function deleteToAzurite(
+  path: string,
+  body: string,
+  headers: any
+): Promise<AxiosResponse<any, any>> {
+  const url = `${TableEntityTestConfig.protocol}://${
+    TableEntityTestConfig.host
+  }:${TableEntityTestConfig.port}/${
+    TableEntityTestConfig.accountName
+  }/${path}?${generateSas()}`;
+  const requestConfig = axiosRequestConfig(url, path, headers);
+  const result = await axios({
+    method: "delete",
+    url,
+    data: body,
+    headers: requestConfig.headers
+  });
+  return result;
 }

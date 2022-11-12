@@ -9,6 +9,7 @@ export const DEFAULT_TABLE_LISTENING_PORT = 10002;
 export const DEFAULT_ENABLE_ACCESS_LOG = true;
 export const DEFAULT_ENABLE_DEBUG_LOG = true;
 export const DEFAULT_TABLE_PERSISTENCE_PATH = "__tablestorage__";
+export const DEFAULT_KEY_MAX_LENGTH = 512;
 
 export enum TABLE_STATUSCODE {
   CREATED = 201,
@@ -16,8 +17,10 @@ export enum TABLE_STATUSCODE {
 }
 
 export const DEFAULT_TABLE_CONTEXT_PATH = "azurite_table_context";
-export const TABLE_API_VERSION = "2021-02-12";
-export const VERSION = "3.15.0";
+export const TABLE_API_VERSION = "2021-10-04";
+export const VERSION = "3.20.1";
+// Max Body size is 4 MB
+export const BODY_SIZE_MAX = 1024 * 1024 * 4;
 
 export const HeaderConstants = {
   SERVER: "Server",
@@ -68,6 +71,10 @@ export const DEFAULT_TABLE_PERSISTENCE_ARRAY: StoreDestinationArray = [
 
 export const QUERY_RESULT_MAX_NUM = 1000;
 export const ValidAPIVersions = [
+  "2021-10-04",
+  "2021-08-06",
+  "2021-06-08",
+  "2021-04-10",
   "2021-02-12",
   "2020-12-06",
   "2020-10-02",

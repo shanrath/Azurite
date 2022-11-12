@@ -93,7 +93,7 @@ export default class TableBatchOrchestrator {
         this.requests[0]
       );
 
-      if (!requestPartitionKey) {
+      if (requestPartitionKey === undefined) {
         this.wasError = true;
         this.errorResponse = this.serialization.serializeGeneralRequestError(
           "Partition key not found in request",
@@ -163,9 +163,11 @@ export default class TableBatchOrchestrator {
     responseString += batchBoundary + "\r\n";
     // (currently static header) ToDo: Validate if we need to correct headers via tests
     responseString +=
-      "Content-Type: multipart/mixed; boundary=" + changesetBoundary + "\r\n";
+      "Content-Type: multipart/mixed; boundary=" +
+      changesetBoundary +
+      "\r\n\r\n";
     const changesetBoundaryClose: string = "--" + changesetBoundary + "--\r\n";
-    changesetBoundary = "\r\n--" + changesetBoundary;
+    changesetBoundary = "--" + changesetBoundary;
     if (this.wasError === false) {
       this.requests.forEach((request) => {
         responseString += changesetBoundary;
@@ -372,12 +374,10 @@ export default class TableBatchOrchestrator {
     const updatedContext = batchContextClone as TableStorageContext;
     updatedContext.request = request;
     updatedContext.batchId = batchId;
-    let partitionKey: string;
-    let rowKey: string;
     const ifmatch: string = request.getHeader("if-match") || "*";
 
-    partitionKey = this.extractRequestPartitionKey(request);
-    rowKey = this.extractRequestRowKey(request);
+    const partitionKey = this.extractRequestPartitionKey(request);
+    const rowKey = this.extractRequestRowKey(request);
     response = await this.parentHandler.deleteEntity(
       request.getPath(),
       partitionKey,
@@ -426,14 +426,14 @@ export default class TableBatchOrchestrator {
     updatedContext.batchId = batchId;
     const partitionKey = this.extractRequestPartitionKey(request);
     const rowKey = this.extractRequestRowKey(request);
-    const ifmatch: string = request.getHeader("if-match") || "*";
+    const ifMatch = request.getHeader("if-match");
 
     response = await this.parentHandler.updateEntity(
       request.getPath(),
       partitionKey,
       rowKey,
       {
-        ifMatch: ifmatch,
+        ifMatch,
         ...request.params
       } as BatchTableUpdateEntityOptionalParams,
       updatedContext
@@ -548,14 +548,14 @@ export default class TableBatchOrchestrator {
 
     const partitionKey = this.extractRequestPartitionKey(request);
     const rowKey = this.extractRequestRowKey(request);
-    const ifmatch: string = request.getHeader("if-match") || "*";
+    const ifMatch = request.getHeader("if-match");
 
     response = await this.parentHandler.mergeEntity(
       request.getPath(),
       partitionKey,
       rowKey,
       {
-        ifMatch: ifmatch,
+        ifMatch,
         ...request.params
       } as BatchTableMergeEntityOptionalParams,
       updatedContext
@@ -578,14 +578,15 @@ export default class TableBatchOrchestrator {
    * @return {*}  {string}
    * @memberof TableBatchOrchestrator
    */
-  private extractRequestPartitionKey(request: BatchRequest): string {
-    let partitionKey: string;
+  private extractRequestPartitionKey(
+    request: BatchRequest
+  ): string | undefined {
+    let partitionKey: string | undefined;
 
     const url = decodeURI(request.getUrl());
-    const partKeyMatch = url.match(/(?<=PartitionKey=')(.+)(?=',)/gi);
-    partitionKey = partKeyMatch ? partKeyMatch[0] : "";
+    const partKeyMatch = url.match(/(?<=PartitionKey=')(.*)(?=',)/gi);
 
-    if (partitionKey === "") {
+    if (partKeyMatch === null) {
       // row key not in URL, must be in body
       const body = request.getBody();
       if (body !== "") {
@@ -594,7 +595,7 @@ export default class TableBatchOrchestrator {
       }
     } else {
       // keys can have more complex values which are URI encoded
-      partitionKey = decodeURIComponent(partitionKey);
+      partitionKey = decodeURIComponent(partKeyMatch[0]);
     }
     return partitionKey;
   }
