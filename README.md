@@ -1,3 +1,9 @@
+# Fork to support windows container images
+Based on [Stefan Scherer's node docker image for windows](https://github.com/StefanScherer/dockerfiles-windows/tree/main/node), this fork is configured to place the npm build output on top of the windows + node base image.
+This was intended for personal use and as a proof of concept.
+Work was done in <https://github.com/Azure/Azurite/issues/2531> and <https://github.com/Azure/Azurite/issues/2332> to port the above approach back upstream, which should land in the following months (as of 2025-06-06)
+
+
 # Azurite V3
 
 [![npm version](https://badge.fury.io/js/azurite.svg)](https://badge.fury.io/js/azurite)
