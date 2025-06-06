@@ -3,6 +3,7 @@ Based on [Stefan Scherer's node docker image for windows](https://github.com/Ste
 This was intended for personal use and as a proof of concept.
 Work was done in <https://github.com/Azure/Azurite/issues/2531> and <https://github.com/Azure/Azurite/issues/2332> to port the above approach back upstream, which should land in the following months (as of 2025-06-06)
 
+The upstream build is currently is blocked on the use of buildkit for windows, but this repository does not use Docker BuildKit / buildX (as support for windows was experimental/limited at the time, see <https://docs.docker.com/build/buildkit/#buildkit-on-windows>)
 
 # Azurite V3
 
